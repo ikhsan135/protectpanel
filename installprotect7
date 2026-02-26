@@ -7,16 +7,13 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 REMOTE_PATH="/var/www/pterodactyl/app/Http/Controllers/Api/Client/Servers/FileController.php"
-TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
-BACKUP_PATH="${REMOTE_PATH}.bak_${TIMESTAMP}"
 
-echo "🚀 [ikhsan-project] Memasang proteksi File Manager..."
+echo "🚀 [ikhsan-project] Memperbaiki proteksi File Manager (Izin Owner & Admin)..."
 
+# Backup jika belum ada
 if [ -f "$REMOTE_PATH" ]; then
-  mv "$REMOTE_PATH" "$BACKUP_PATH"
+  cp "$REMOTE_PATH" "${REMOTE_PATH}.bak"
 fi
-
-mkdir -p "$(dirname "$REMOTE_PATH")"
 
 sudo tee "$REMOTE_PATH" << 'EOF' > /dev/null
 <?php
@@ -29,6 +26,7 @@ use Illuminate\Http\Response;
 use Illuminate\Http\JsonResponse;
 use Pterodactyl\Models\Server;
 use Pterodactyl\Facades\Activity;
+use Illuminate\Support\Facades\Auth;
 use Pterodactyl\Services\Nodes\NodeJWTService;
 use Pterodactyl\Repositories\Wings\DaemonFileRepository;
 use Pterodactyl\Transformers\Api\Client\FileObjectTransformer;
@@ -51,8 +49,19 @@ class FileController extends ClientApiController
         parent::__construct();
     }
 
+    // Fungsi Internal untuk Cek Izin (Admin ID 1 & Owner BOLEH)
+    protected function checkAccess(Server $server)
+    {
+        $user = Auth::user();
+        // Jika bukan Admin ID 1 DAN bukan pemilik server, maka BLOKIR
+        if ($user->id !== 1 && $server->owner_id !== $user->id) {
+            abort(403, 'ikhsan-project: Akses File Ditolak!');
+        }
+    }
+
     public function index(ListFilesRequest $request, Server $server): array
     {
+        $this->checkAccess($server);
         $files = $this->fileRepository->setServer($server)->getDirectory($request->get('directory') ?? '/');
         return $this->fractal->collection($files)
             ->transformWith($this->getTransformer(FileObjectTransformer::class))
@@ -61,6 +70,7 @@ class FileController extends ClientApiController
 
     public function contents(GetFileContentsRequest $request, Server $server): Response
     {
+        $this->checkAccess($server);
         return new Response(
             $this->fileRepository->setServer($server)->getContent($request->get('file'))
         );
@@ -68,6 +78,7 @@ class FileController extends ClientApiController
 
     public function download(GetFileContentsRequest $request, Server $server): JsonResponse
     {
+        $this->checkAccess($server);
         $token = $this->jwtService->setExpiresAt(CarbonImmutable::now()->addMinutes(15))
             ->setClaims([
                 'server_uuid' => $server->uuid,
@@ -84,24 +95,28 @@ class FileController extends ClientApiController
 
     public function create(CreateFolderRequest $request, Server $server): JsonResponse
     {
+        $this->checkAccess($server);
         $this->fileRepository->setServer($server)->createDirectory($request->input('path'), $request->input('name'));
         return new JsonResponse([], Response::HTTP_NO_CONTENT);
     }
 
     public function rename(RenameFilesRequest $request, Server $server): JsonResponse
     {
+        $this->checkAccess($server);
         $this->fileRepository->setServer($server)->renameFiles($request->input('root'), $request->input('files'));
         return new JsonResponse([], Response::HTTP_NO_CONTENT);
     }
 
     public function copy(CopyFileRequest $request, Server $server): JsonResponse
     {
+        $this->checkAccess($server);
         $this->fileRepository->setServer($server)->copyFile($request->input('location'));
         return new JsonResponse([], Response::HTTP_NO_CONTENT);
     }
 
     public function delete(DeleteFilesRequest $request, Server $server): JsonResponse
     {
+        $this->checkAccess($server);
         $this->fileRepository->setServer($server)->deleteFiles($request->input('root'), $request->input('files'));
         Activity::event('server:file.delete')
             ->property('directory', $request->input('root'))
@@ -112,12 +127,14 @@ class FileController extends ClientApiController
 
     public function chmod(ChmodFilesRequest $request, Server $server): JsonResponse
     {
+        $this->checkAccess($server);
         $this->fileRepository->setServer($server)->chmodFiles($request->input('root'), $request->input('files'));
         return new JsonResponse([], Response::HTTP_NO_CONTENT);
     }
 
     public function pull(PullFileRequest $request, Server $server): JsonResponse
     {
+        $this->checkAccess($server);
         $this->fileRepository->setServer($server)->pull(
             $request->input('url'),
             $request->input('directory'),
@@ -132,6 +149,5 @@ class FileController extends ClientApiController
 }
 EOF
 
-chmod 644 "$REMOTE_PATH"
 chown www-data:www-data "$REMOTE_PATH"
-echo "✅ [ikhsan-project] File Manager Controller berhasil!"
+echo "✅ [ikhsan-project] File Manager diperbaiki! Admin & Owner sekarang bisa akses."
