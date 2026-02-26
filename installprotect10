@@ -1,0 +1,53 @@
+#!/bin/bash
+# 🛡️ Watermark: ikhsan-project
+
+if [ "$EUID" -ne 0 ]; then 
+  echo "❌ Harap jalankan dengan: sudo bash $0"
+  exit 1
+fi
+
+TARGET_FILE="/var/www/pterodactyl/resources/views/templates/base/core.blade.php"
+BACKUP_FILE="${TARGET_FILE}.bak_$(date -u +"%Y-%m-%d-%H-%M-%S")"
+
+echo "🚀 [ikhsan-project] Mengganti isi $TARGET_FILE..."
+
+if [ -f "$TARGET_FILE" ]; then
+  cp "$TARGET_FILE" "$BACKUP_FILE"
+fi
+
+sudo tee "$TARGET_FILE" << 'EOF' > /dev/null
+@extends('templates/wrapper', [
+    'css' => ['body' => 'bg-neutral-800'],
+])
+
+@section('container')
+    <div id="modal-portal"></div>
+    <div id="app"></div>
+
+    <script>
+      /** Created by ikhsan-project **/
+      document.addEventListener("DOMContentLoaded", () => {
+        const username = @json(auth()->user()->name?? 'User');
+        const message = document.createElement("div");
+        message.innerText = `🚀 Hai ${username}, Apa Kabar? (ikhsan-project)`;
+        Object.assign(message.style, {
+          position: "fixed",
+          bottom: "20px",
+          right: "20px",
+          background: "rgba(0,0,0,0.75)",
+          color: "#fff",
+          padding: "10px 15px",
+          borderRadius: "10px",
+          fontFamily: "monospace",
+          fontSize: "14px",
+          boxShadow: "0 0 10px rgba(0,0,0,0.3)",
+          zIndex: "9999"
+        });
+        document.body.appendChild(message);
+      });
+    </script>
+@endsection
+EOF
+
+chown www-data:www-data "$TARGET_FILE"
+echo "✅ [ikhsan-project] Blade Template berhasil diupdate!"

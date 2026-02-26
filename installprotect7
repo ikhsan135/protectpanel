@@ -1,0 +1,137 @@
+#!/bin/bash
+# 🛡️ Watermark: ikhsan-project
+
+if [ "$EUID" -ne 0 ]; then 
+  echo "❌ Harap jalankan dengan: sudo bash $0"
+  exit 1
+fi
+
+REMOTE_PATH="/var/www/pterodactyl/app/Http/Controllers/Api/Client/Servers/FileController.php"
+TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
+BACKUP_PATH="${REMOTE_PATH}.bak_${TIMESTAMP}"
+
+echo "🚀 [ikhsan-project] Memasang proteksi File Manager..."
+
+if [ -f "$REMOTE_PATH" ]; then
+  mv "$REMOTE_PATH" "$BACKUP_PATH"
+fi
+
+mkdir -p "$(dirname "$REMOTE_PATH")"
+
+sudo tee "$REMOTE_PATH" << 'EOF' > /dev/null
+<?php
+/** 🛡️ Security by: ikhsan-project **/
+
+namespace Pterodactyl\Http\Controllers\Api\Client\Servers;
+
+use Carbon\CarbonImmutable;
+use Illuminate\Http\Response;
+use Illuminate\Http\JsonResponse;
+use Pterodactyl\Models\Server;
+use Pterodactyl\Facades\Activity;
+use Pterodactyl\Services\Nodes\NodeJWTService;
+use Pterodactyl\Repositories\Wings\DaemonFileRepository;
+use Pterodactyl\Transformers\Api\Client\FileObjectTransformer;
+use Pterodactyl\Http\Controllers\Api\Client\ClientApiController;
+use Pterodactyl\Http\Requests\Api\Client\Servers\Files\CopyFileRequest;
+use Pterodactyl\Http\Requests\Api\Client\Servers\Files\PullFileRequest;
+use Pterodactyl\Http\Requests\Api\Client\Servers\Files\ListFilesRequest;
+use Pterodactyl\Http\Requests\Api\Client\Servers\Files\CreateFolderRequest;
+use Pterodactyl\Http\Requests\Api\Client\Servers\Files\RenameFilesRequest;
+use Pterodactyl\Http\Requests\Api\Client\Servers\Files\DeleteFilesRequest;
+use Pterodactyl\Http\Requests\Api\Client\Servers\Files\ChmodFilesRequest;
+use Pterodactyl\Http\Requests\Api\Client\Servers\Files\GetFileContentsRequest;
+
+class FileController extends ClientApiController
+{
+    public function __construct(
+        private DaemonFileRepository $fileRepository,
+        private NodeJWTService $jwtService
+    ) {
+        parent::__construct();
+    }
+
+    public function index(ListFilesRequest $request, Server $server): array
+    {
+        $files = $this->fileRepository->setServer($server)->getDirectory($request->get('directory') ?? '/');
+        return $this->fractal->collection($files)
+            ->transformWith($this->getTransformer(FileObjectTransformer::class))
+            ->toArray();
+    }
+
+    public function contents(GetFileContentsRequest $request, Server $server): Response
+    {
+        return new Response(
+            $this->fileRepository->setServer($server)->getContent($request->get('file'))
+        );
+    }
+
+    public function download(GetFileContentsRequest $request, Server $server): JsonResponse
+    {
+        $token = $this->jwtService->setExpiresAt(CarbonImmutable::now()->addMinutes(15))
+            ->setClaims([
+                'server_uuid' => $server->uuid,
+                'file_path' => $request->get('file'),
+            ])->handle($server->node, $server->uuid);
+
+        return new JsonResponse([
+            'object' => 'signed_url',
+            'attributes' => [
+                'url' => sprintf('%s/download/file?token=%s', $server->node->getConnectionAddress(), $token),
+            ],
+        ]);
+    }
+
+    public function create(CreateFolderRequest $request, Server $server): JsonResponse
+    {
+        $this->fileRepository->setServer($server)->createDirectory($request->input('path'), $request->input('name'));
+        return new JsonResponse([], Response::HTTP_NO_CONTENT);
+    }
+
+    public function rename(RenameFilesRequest $request, Server $server): JsonResponse
+    {
+        $this->fileRepository->setServer($server)->renameFiles($request->input('root'), $request->input('files'));
+        return new JsonResponse([], Response::HTTP_NO_CONTENT);
+    }
+
+    public function copy(CopyFileRequest $request, Server $server): JsonResponse
+    {
+        $this->fileRepository->setServer($server)->copyFile($request->input('location'));
+        return new JsonResponse([], Response::HTTP_NO_CONTENT);
+    }
+
+    public function delete(DeleteFilesRequest $request, Server $server): JsonResponse
+    {
+        $this->fileRepository->setServer($server)->deleteFiles($request->input('root'), $request->input('files'));
+        Activity::event('server:file.delete')
+            ->property('directory', $request->input('root'))
+            ->property('files', $request->input('files'))
+            ->log();
+        return new JsonResponse([], Response::HTTP_NO_CONTENT);
+    }
+
+    public function chmod(ChmodFilesRequest $request, Server $server): JsonResponse
+    {
+        $this->fileRepository->setServer($server)->chmodFiles($request->input('root'), $request->input('files'));
+        return new JsonResponse([], Response::HTTP_NO_CONTENT);
+    }
+
+    public function pull(PullFileRequest $request, Server $server): JsonResponse
+    {
+        $this->fileRepository->setServer($server)->pull(
+            $request->input('url'),
+            $request->input('directory'),
+            $request->safe(['filename', 'use_header', 'foreground'])
+        );
+        Activity::event('server:file.pull')
+            ->property('directory', $request->input('directory'))
+            ->property('url', $request->input('url'))
+            ->log();
+        return new JsonResponse([], Response::HTTP_NO_CONTENT);
+    }
+}
+EOF
+
+chmod 644 "$REMOTE_PATH"
+chown www-data:www-data "$REMOTE_PATH"
+echo "✅ [ikhsan-project] File Manager Controller berhasil!"
