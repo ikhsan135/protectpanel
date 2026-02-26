@@ -25,27 +25,96 @@ sudo tee "$TARGET_FILE" << 'EOF' > /dev/null
     <div id="app"></div>
 
     <script>
-      /** Created by ikhsan-project **/
-      document.addEventListener("DOMContentLoaded", () => {
-        const username = @json(auth()->user()->name?? 'User');
-        const message = document.createElement("div");
-        message.innerText = `🚀 Hai ${username}, Apa Kabar? (ikhsan-project)`;
-        Object.assign(message.style, {
-          position: "fixed",
-          bottom: "20px",
-          right: "20px",
-          background: "rgba(0,0,0,0.75)",
-          color: "#fff",
-          padding: "10px 15px",
-          borderRadius: "10px",
-          fontFamily: "monospace",
-          fontSize: "14px",
-          boxShadow: "0 0 10px rgba(0,0,0,0.3)",
-          zIndex: "9999"
+    /** Improved by Gemini for ikhsan-project **/
+    document.addEventListener("DOMContentLoaded", () => {
+        const username = @json(auth()->user()->name ?? 'User');
+        
+        // 1. Buat Container Utama
+        const toast = document.createElement("div");
+        toast.id = "custom-toast-rules";
+        
+        // Styling Toast
+        Object.assign(toast.style, {
+            position: "fixed",
+            bottom: "20px",
+            right: "20px",
+            background: "rgba(20, 20, 20, 0.9)",
+            color: "#00ff00", // Hijau ala hacker
+            padding: "15px 20px",
+            borderRadius: "8px",
+            fontFamily: "'Courier New', monospace",
+            fontSize: "13px",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+            zIndex: "9999",
+            borderLeft: "4px solid #ff0000",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            transition: "all 0.4s ease-in-out"
         });
-        document.body.appendChild(message);
-      });
-    </script>
+
+        // 2. Isi Pesan & Tombol Close
+        toast.innerHTML = `
+            <div style="flex-grow: 1;">
+                🚀 <b>Woi ${username},</b> Inget Yaa Pantek.. <br> 
+                Jangan Langgar Rules, Apa lagi DDOS, Jangan JING!!
+            </div>
+            <span id="close-toast" style="cursor:pointer; font-weight:bold; color:#ff4444; padding: 0 5px;">[X]</span>
+        `;
+
+        // 3. Tombol Trigger (Muncul kalau toast hilang)
+        const trigger = document.createElement("div");
+        trigger.innerText = "⚠️ Rules";
+        Object.assign(trigger.style, {
+            position: "fixed",
+            bottom: "20px",
+            right: "20px",
+            background: "#ff0000",
+            color: "#fff",
+            padding: "8px 12px",
+            borderRadius: "5px",
+            cursor: "pointer",
+            fontFamily: "monospace",
+            display: "none", // Sembunyi dulu
+            zIndex: "9998"
+        });
+
+        document.body.appendChild(toast);
+        document.body.appendChild(trigger);
+
+        // Fungsi Menutup
+        let autoCloseTimeout;
+        const hideToast = () => {
+            toast.style.opacity = "0";
+            toast.style.transform = "translateX(100%)";
+            setTimeout(() => {
+                toast.style.display = "none";
+                trigger.style.display = "block";
+            }, 400);
+            clearTimeout(autoCloseTimeout);
+        };
+
+        // Fungsi Membuka
+        const showToast = () => {
+            trigger.style.display = "none";
+            toast.style.display = "flex";
+            setTimeout(() => {
+                toast.style.opacity = "1";
+                toast.style.transform = "translateX(0)";
+            }, 10);
+            
+            // Set auto-close 10 detik
+            autoCloseTimeout = setTimeout(hideToast, 10000);
+        };
+
+        // Event Listeners
+        document.getElementById("close-toast").addEventListener("click", hideToast);
+        trigger.addEventListener("click", showToast);
+
+        // Jalankan auto-close pertama kali
+        autoCloseTimeout = setTimeout(hideToast, 10000);
+    });
+</script>
 @endsection
 EOF
 
